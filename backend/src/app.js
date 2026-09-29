@@ -23,14 +23,14 @@ const app = express();
 const allowedOrigins = [
   "http://localhost:5173",
   "https://dev-track-olive-five.vercel.app",
-  process.env.FRONTEND_URL,
+  process.env.FRONTEND_URL?.trim(),
 ].filter(Boolean);
 
 app.use(
   cors({
     origin: (origin, callback) => {
       // Allow requests without an Origin header
-      // such as health checks and server-to-server requests.
+      // such as server-to-server requests and health checks.
       if (!origin) {
         return callback(null, true);
       }
@@ -41,11 +41,11 @@ app.use(
 
       console.log(`CORS blocked origin: ${origin}`);
 
-      return callback(
-        new Error("Not allowed by CORS")
-      );
+      return callback(new Error("Not allowed by CORS"));
     },
+
     credentials: true,
+
     methods: [
       "GET",
       "POST",
@@ -54,6 +54,7 @@ app.use(
       "DELETE",
       "OPTIONS",
     ],
+
     allowedHeaders: [
       "Content-Type",
       "Authorization",
@@ -61,9 +62,6 @@ app.use(
     ],
   })
 );
-
-// Explicitly handle CORS preflight requests
-app.options("*", cors());
 
 // ============================================================
 // BODY PARSER
