@@ -90,6 +90,10 @@ function Invoices() {
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState("");
 
+  // ============================================================
+  // FETCH DATA
+  // ============================================================
+
   useEffect(() => {
     fetchData();
   }, []);
@@ -150,6 +154,10 @@ function Invoices() {
     }
   };
 
+  // ============================================================
+  // FILTERING
+  // ============================================================
+
   const filteredInvoices = useMemo(() => {
     const searchTerm = search.trim().toLowerCase();
 
@@ -191,6 +199,10 @@ function Invoices() {
     });
   }, [invoices, search, statusFilter]);
 
+  // ============================================================
+  // AVAILABLE PROJECTS
+  // ============================================================
+
   const availableProjects = useMemo(() => {
     if (!formData.client) {
       return projects;
@@ -210,6 +222,10 @@ function Invoices() {
     });
   }, [projects, formData.client]);
 
+  // ============================================================
+  // CALCULATIONS
+  // ============================================================
+
   const subtotal = useMemo(() => {
     return formData.items.reduce((sum, item) => {
       const quantity = Number(item.quantity) || 0;
@@ -226,6 +242,10 @@ function Invoices() {
   }, [subtotal, formData.tax]);
 
   const total = subtotal + taxAmount;
+
+  // ============================================================
+  // HELPERS
+  // ============================================================
 
   const formatCurrency = (amount) => {
     return new Intl.NumberFormat("en-NG", {
@@ -350,7 +370,8 @@ function Invoices() {
           ? invoice.items.map((item) => ({
               description:
                 item.description || "",
-              quantity: item.quantity || 1,
+              quantity:
+                item.quantity || 1,
               unitPrice:
                 item.unitPrice ?? "",
             }))
@@ -406,9 +427,7 @@ function Invoices() {
     value
   ) => {
     setFormData((current) => {
-      const updatedItems = [
-        ...current.items,
-      ];
+      const updatedItems = [...current.items];
 
       updatedItems[index] = {
         ...updatedItems[index],
@@ -520,6 +539,7 @@ function Invoices() {
           formData.project || undefined,
         dueDate: formData.dueDate,
         tax: Number(formData.tax) || 0,
+
         items: formData.items.map(
           (item) => ({
             description:
@@ -630,6 +650,7 @@ function Invoices() {
       setError(
         "This invoice does not have a public link yet."
       );
+
       return;
     }
 
@@ -761,6 +782,7 @@ function Invoices() {
       setError(
         "This invoice does not have a public link yet."
       );
+
       return;
     }
 
@@ -926,9 +948,7 @@ function Invoices() {
               type="text"
               value={search}
               onChange={(event) =>
-                setSearch(
-                  event.target.value
-                )
+                setSearch(event.target.value)
               }
               placeholder="Search invoices..."
               className="w-full rounded-lg border border-slate-300 px-4 py-2.5 text-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
@@ -947,18 +967,23 @@ function Invoices() {
             <option value="all">
               All Statuses
             </option>
+
             <option value="draft">
               Draft
             </option>
+
             <option value="sent">
               Sent
             </option>
+
             <option value="paid">
               Paid
             </option>
+
             <option value="overdue">
               Overdue
             </option>
+
             <option value="cancelled">
               Cancelled
             </option>
@@ -969,42 +994,41 @@ function Invoices() {
       {/* Invoice Table */}
       <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
         <div className="overflow-x-auto">
-          <table className="min-w-full">
+          <table className="min-w-[1100px] w-full">
             <thead className="border-b border-slate-200 bg-slate-50">
               <tr>
-                <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">
+                <th className="whitespace-nowrap px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">
                   Invoice
                 </th>
 
-                <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">
+                <th className="whitespace-nowrap px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">
                   Client
                 </th>
 
-                <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">
+                <th className="whitespace-nowrap px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">
                   Project
                 </th>
 
-                <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">
+                <th className="whitespace-nowrap px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">
                   Due Date
                 </th>
 
-                <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">
+                <th className="whitespace-nowrap px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">
                   Amount
                 </th>
 
-                <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">
+                <th className="whitespace-nowrap px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">
                   Status
                 </th>
 
-                <th className="px-6 py-4 text-right text-xs font-semibold uppercase tracking-wider text-slate-500">
+                <th className="whitespace-nowrap px-6 py-4 text-right text-xs font-semibold uppercase tracking-wider text-slate-500">
                   Actions
                 </th>
               </tr>
             </thead>
 
             <tbody className="divide-y divide-slate-100">
-              {filteredInvoices.length ===
-              0 ? (
+              {filteredInvoices.length === 0 ? (
                 <tr>
                   <td
                     colSpan="7"
@@ -1022,7 +1046,8 @@ function Invoices() {
                       key={invoice._id}
                       className="transition hover:bg-slate-50"
                     >
-                      <td className="px-6 py-4">
+                      {/* Invoice */}
+                      <td className="whitespace-nowrap px-6 py-4">
                         <div className="font-semibold text-slate-900">
                           {getInvoiceNumber(
                             invoice
@@ -1030,7 +1055,8 @@ function Invoices() {
                         </div>
                       </td>
 
-                      <td className="px-6 py-4">
+                      {/* Client */}
+                      <td className="whitespace-nowrap px-6 py-4">
                         <div className="text-sm font-medium text-slate-900">
                           {getClientName(
                             invoice
@@ -1038,7 +1064,8 @@ function Invoices() {
                         </div>
                       </td>
 
-                      <td className="px-6 py-4">
+                      {/* Project */}
+                      <td className="whitespace-nowrap px-6 py-4">
                         <div className="text-sm text-slate-600">
                           {getProjectName(
                             invoice
@@ -1046,7 +1073,8 @@ function Invoices() {
                         </div>
                       </td>
 
-                      <td className="px-6 py-4">
+                      {/* Due Date */}
+                      <td className="whitespace-nowrap px-6 py-4">
                         <div className="text-sm text-slate-600">
                           {formatDate(
                             invoice.dueDate
@@ -1054,7 +1082,8 @@ function Invoices() {
                         </div>
                       </td>
 
-                      <td className="px-6 py-4">
+                      {/* Amount */}
+                      <td className="whitespace-nowrap px-6 py-4">
                         <div className="text-sm font-semibold text-slate-900">
                           {formatCurrency(
                             invoice.total ??
@@ -1064,7 +1093,8 @@ function Invoices() {
                         </div>
                       </td>
 
-                      <td className="px-6 py-4">
+                      {/* Status */}
+                      <td className="whitespace-nowrap px-6 py-4">
                         <span
                           className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${
                             statusStyles[
@@ -1080,8 +1110,8 @@ function Invoices() {
                       </td>
 
                       {/* Actions */}
-                      <td className="px-6 py-4">
-                        <div className="flex flex-wrap justify-end gap-2">
+                      <td className="whitespace-nowrap px-6 py-4">
+                        <div className="flex items-center justify-end gap-1.5">
                           {/* View */}
                           <button
                             onClick={() =>
@@ -1089,7 +1119,7 @@ function Invoices() {
                                 invoice
                               )
                             }
-                            className="rounded-lg px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100"
+                            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900"
                           >
                             View
                           </button>
@@ -1106,7 +1136,7 @@ function Invoices() {
                                       invoice
                                     )
                                   }
-                                  className="rounded-lg px-3 py-2 text-sm font-medium text-indigo-600 transition hover:bg-indigo-50"
+                                  className="rounded-lg border border-indigo-100 bg-indigo-50 px-3 py-2 text-sm font-medium text-indigo-600 transition hover:border-indigo-200 hover:bg-indigo-100"
                                 >
                                   Edit
                                 </button>
@@ -1117,7 +1147,7 @@ function Invoices() {
                                       invoice
                                     )
                                   }
-                                  className="rounded-lg px-3 py-2 text-sm font-medium text-red-600 transition hover:bg-red-50"
+                                  className="rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-sm font-medium text-red-600 transition hover:border-red-200 hover:bg-red-100"
                                 >
                                   Delete
                                 </button>
@@ -1557,9 +1587,7 @@ function Invoices() {
 
                 <button
                   type="button"
-                  onClick={
-                    closeSendModal
-                  }
+                  onClick={closeSendModal}
                   disabled={sending}
                   className="text-2xl text-slate-400 transition hover:text-slate-700 disabled:cursor-not-allowed"
                 >
@@ -1616,9 +1644,7 @@ function Invoices() {
 
                     <button
                       type="button"
-                      onClick={
-                        handleCopyLink
-                      }
+                      onClick={handleCopyLink}
                       disabled={
                         sending ||
                         !getPublicInvoiceLink(
@@ -1648,9 +1674,7 @@ function Invoices() {
                 {/* Main Send / Share button */}
                 <button
                   type="button"
-                  onClick={
-                    handleSendInvoice
-                  }
+                  onClick={handleSendInvoice}
                   disabled={
                     sending ||
                     !getPublicInvoiceLink(
@@ -1674,9 +1698,7 @@ function Invoices() {
                 {/* Close */}
                 <button
                   type="button"
-                  onClick={
-                    closeSendModal
-                  }
+                  onClick={closeSendModal}
                   disabled={sending}
                   className="w-full rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
                 >
@@ -1775,9 +1797,7 @@ function Invoices() {
 
                     <button
                       type="button"
-                      onClick={
-                        handleCopyLink
-                      }
+                      onClick={handleCopyLink}
                       disabled={
                         reminding ||
                         !getPublicInvoiceLink(
