@@ -26,10 +26,10 @@ function PaymentCallback() {
       }
 
       try {
+        // Public invoice payments do not have a JWT,
+        // so verification must use the public endpoint.
         const response = await api.get(
-          `/payments/verify/${encodeURIComponent(
-            reference
-          )}`
+          `/payments/public/verify/${encodeURIComponent(reference)}`
         );
 
         if (
@@ -59,7 +59,7 @@ function PaymentCallback() {
 
         setMessage(
           error.response?.data?.message ||
-            "We could not verify your payment. Please check your payment history."
+            "We could not verify your payment. Please check your payment status."
         );
       }
     };

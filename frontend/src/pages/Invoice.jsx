@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import api from "../services/api";
 
 const statusStyles = {
@@ -56,6 +57,8 @@ const getObjectResponse = (data, key) => {
 };
 
 function Invoices() {
+  const navigate = useNavigate();
+
   const [invoices, setInvoices] = useState([]);
   const [clients, setClients] = useState([]);
   const [projects, setProjects] = useState([]);
@@ -69,7 +72,21 @@ function Invoices() {
   const [showForm, setShowForm] = useState(false);
   const [editingInvoice, setEditingInvoice] = useState(null);
 
-  const [formData, setFormData] = useState(getInitialFormData());
+  const [showSendModal, setShowSendModal] = useState(false);
+  const [showReminderModal, setShowReminderModal] =
+    useState(false);
+
+  const [selectedInvoice, setSelectedInvoice] =
+    useState(null);
+
+  const [copied, setCopied] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [reminding, setReminding] = useState(false);
+
+  const [formData, setFormData] = useState(
+    getInitialFormData()
+  );
+
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState("");
 
@@ -80,19 +97,28 @@ function Invoices() {
   const fetchInvoices = async () => {
     const response = await api.get("/invoices");
 
-    return getArrayResponse(response.data, "invoices");
+    return getArrayResponse(
+      response.data,
+      "invoices"
+    );
   };
 
   const fetchClients = async () => {
     const response = await api.get("/clients");
 
-    return getArrayResponse(response.data, "clients");
+    return getArrayResponse(
+      response.data,
+      "clients"
+    );
   };
 
   const fetchProjects = async () => {
     const response = await api.get("/projects");
 
-    return getArrayResponse(response.data, "projects");
+    return getArrayResponse(
+      response.data,
+      "projects"
+    );
   };
 
   const fetchData = async () => {
@@ -100,12 +126,15 @@ function Invoices() {
       setLoading(true);
       setError("");
 
-      const [invoiceData, clientData, projectData] =
-        await Promise.all([
-          fetchInvoices(),
-          fetchClients(),
-          fetchProjects(),
-        ]);
+      const [
+        invoiceData,
+        clientData,
+        projectData,
+      ] = await Promise.all([
+        fetchInvoices(),
+        fetchClients(),
+        fetchProjects(),
+      ]);
 
       setInvoices(invoiceData);
       setClients(clientData);
@@ -144,9 +173,15 @@ function Invoices() {
 
       const matchesSearch =
         !searchTerm ||
-        clientName.toLowerCase().includes(searchTerm) ||
-        projectName.toLowerCase().includes(searchTerm) ||
-        invoiceNumber.toLowerCase().includes(searchTerm);
+        clientName
+          .toLowerCase()
+          .includes(searchTerm) ||
+        projectName
+          .toLowerCase()
+          .includes(searchTerm) ||
+        invoiceNumber
+          .toLowerCase()
+          .includes(searchTerm);
 
       const matchesStatus =
         statusFilter === "all" ||
@@ -168,7 +203,10 @@ function Invoices() {
         project.clientId ||
         project.client;
 
-      return String(projectClientId) === String(formData.client);
+      return (
+        String(projectClientId) ===
+        String(formData.client)
+      );
     });
   }, [projects, formData.client]);
 
@@ -236,13 +274,39 @@ function Invoices() {
     return (
       invoice.invoiceNumber ||
       invoice.number ||
-      `INV-${String(invoice._id || "").slice(-6).toUpperCase()}`
+      `INV-${String(invoice._id || "")
+        .slice(-6)
+        .toUpperCase()}`
     );
   };
 
   const getStatusLabel = (status) => {
-    return statusLabels[status] || status || "Unknown";
+    return (
+      statusLabels[status] ||
+      status ||
+      "Unknown"
+    );
   };
+
+  // ============================================================
+  // PUBLIC INVOICE LINK
+  // ============================================================
+
+  const getPublicInvoiceLink = (invoice) => {
+    if (!invoice?.publicToken) {
+      return "";
+    }
+
+    const frontendUrl =
+      import.meta.env.VITE_FRONTEND_URL ||
+      window.location.origin;
+
+    return `${frontendUrl}/invoice/${invoice.publicToken}`;
+  };
+
+  // ============================================================
+  // CREATE / EDIT
+  // ============================================================
 
   const openCreateModal = () => {
     setEditingInvoice(null);
@@ -264,24 +328,31 @@ function Invoices() {
         invoice.clientId ||
         invoice.client ||
         "",
+
       project:
         invoice.project?._id ||
         invoice.project?.id ||
         invoice.projectId ||
         invoice.project ||
         "",
+
       dueDate: invoice.dueDate
         ? new Date(invoice.dueDate)
             .toISOString()
             .split("T")[0]
         : "",
+
       tax: String(invoice.tax ?? 0),
+
       items:
-        Array.isArray(invoice.items) && invoice.items.length > 0
+        Array.isArray(invoice.items) &&
+        invoice.items.length > 0
           ? invoice.items.map((item) => ({
-              description: item.description || "",
+              description:
+                item.description || "",
               quantity: item.quantity || 1,
-              unitPrice: item.unitPrice ?? "",
+              unitPrice:
+                item.unitPrice ?? "",
             }))
           : [
               {
@@ -313,23 +384,31 @@ function Invoices() {
   const handleInputChange = (event) => {
     const { name, value } = event.target;
 
-    setFormData((current) => ({
-      ...current,
-      [name]: value,
-    }));
-
     if (name === "client") {
       setFormData((current) => ({
         ...current,
         client: value,
         project: "",
       }));
+
+      return;
     }
+
+    setFormData((current) => ({
+      ...current,
+      [name]: value,
+    }));
   };
 
-  const handleItemChange = (index, field, value) => {
+  const handleItemChange = (
+    index,
+    field,
+    value
+  ) => {
     setFormData((current) => {
-      const updatedItems = [...current.items];
+      const updatedItems = [
+        ...current.items,
+      ];
 
       updatedItems[index] = {
         ...updatedItems[index],
@@ -366,7 +445,8 @@ function Invoices() {
       return {
         ...current,
         items: current.items.filter(
-          (_, itemIndex) => itemIndex !== index
+          (_, itemIndex) =>
+            itemIndex !== index
         ),
       };
     });
@@ -390,7 +470,10 @@ function Invoices() {
         return "Every invoice item needs a description.";
       }
 
-      if (!Number(item.quantity) || Number(item.quantity) <= 0) {
+      if (
+        !Number(item.quantity) ||
+        Number(item.quantity) <= 0
+      ) {
         return "Quantity must be greater than zero.";
       }
 
@@ -402,8 +485,14 @@ function Invoices() {
       }
     }
 
-    if (Number(formData.tax) < 0) {
-      return "Tax cannot be negative.";
+    const taxRate = Number(formData.tax);
+
+    if (
+      !Number.isFinite(taxRate) ||
+      taxRate < 0 ||
+      taxRate > 100
+    ) {
+      return "Tax percentage must be between 0% and 100%.";
     }
 
     return "";
@@ -412,7 +501,8 @@ function Invoices() {
   const handleSubmit = async (event) => {
     event.preventDefault();
 
-    const validationError = validateForm();
+    const validationError =
+      validateForm();
 
     if (validationError) {
       setFormError(validationError);
@@ -426,14 +516,22 @@ function Invoices() {
 
       const payload = {
         client: formData.client,
-        project: formData.project || undefined,
+        project:
+          formData.project || undefined,
         dueDate: formData.dueDate,
         tax: Number(formData.tax) || 0,
-        items: formData.items.map((item) => ({
-          description: item.description.trim(),
-          quantity: Number(item.quantity),
-          unitPrice: Number(item.unitPrice),
-        })),
+        items: formData.items.map(
+          (item) => ({
+            description:
+              item.description.trim(),
+            quantity: Number(
+              item.quantity
+            ),
+            unitPrice: Number(
+              item.unitPrice
+            ),
+          })
+        ),
       };
 
       if (editingInvoice) {
@@ -442,14 +540,16 @@ function Invoices() {
           payload
         );
 
-        const updatedInvoice = getObjectResponse(
-          response.data,
-          "invoice"
-        );
+        const updatedInvoice =
+          getObjectResponse(
+            response.data,
+            "invoice"
+          );
 
         setInvoices((current) =>
           current.map((invoice) =>
-            invoice._id === editingInvoice._id
+            invoice._id ===
+            editingInvoice._id
               ? updatedInvoice
               : invoice
           )
@@ -460,10 +560,11 @@ function Invoices() {
           payload
         );
 
-        const newInvoice = getObjectResponse(
-          response.data,
-          "invoice"
-        );
+        const newInvoice =
+          getObjectResponse(
+            response.data,
+            "invoice"
+          );
 
         setInvoices((current) => [
           newInvoice,
@@ -483,6 +584,10 @@ function Invoices() {
     }
   };
 
+  // ============================================================
+  // DELETE
+  // ============================================================
+
   const handleDelete = async (invoice) => {
     const confirmed = window.confirm(
       `Are you sure you want to delete ${getInvoiceNumber(
@@ -497,11 +602,14 @@ function Invoices() {
     try {
       setError("");
 
-      await api.delete(`/invoices/${invoice._id}`);
+      await api.delete(
+        `/invoices/${invoice._id}`
+      );
 
       setInvoices((current) =>
         current.filter(
-          (item) => item._id !== invoice._id
+          (item) =>
+            item._id !== invoice._id
         )
       );
     } catch (err) {
@@ -513,34 +621,259 @@ function Invoices() {
     }
   };
 
-  const handlePayNow = async (invoiceId) => {
+  // ============================================================
+  // VIEW INVOICE
+  // ============================================================
+
+  const handleViewInvoice = (invoice) => {
+    if (!invoice?.publicToken) {
+      setError(
+        "This invoice does not have a public link yet."
+      );
+      return;
+    }
+
+    navigate(
+      `/invoice/${invoice.publicToken}`
+    );
+  };
+
+  // ============================================================
+  // SEND INVOICE
+  // ============================================================
+
+  const handleSendInvoice = async () => {
+    if (!selectedInvoice) {
+      return;
+    }
+
     try {
+      setSending(true);
       setError("");
 
-      const response = await api.post(
-        "/payments/initialize",
-        {
-          invoiceId,
+      let updatedInvoice =
+        selectedInvoice;
+
+      if (
+        selectedInvoice.status ===
+        "draft"
+      ) {
+        const response =
+          await api.patch(
+            `/invoices/${selectedInvoice._id}/send`
+          );
+
+        updatedInvoice =
+          getObjectResponse(
+            response.data,
+            "invoice"
+          );
+
+        if (!updatedInvoice) {
+          throw new Error(
+            "Updated invoice was not returned."
+          );
         }
-      );
 
-      const checkoutUrl = response.data?.checkoutUrl;
+        setInvoices(
+          (currentInvoices) =>
+            currentInvoices.map(
+              (invoice) =>
+                invoice._id ===
+                selectedInvoice._id
+                  ? updatedInvoice
+                  : invoice
+            )
+        );
 
-      if (!checkoutUrl) {
-        throw new Error(
-          "Paystack checkout URL was not returned."
+        setSelectedInvoice(
+          updatedInvoice
         );
       }
 
-      window.location.href = checkoutUrl;
+      const link =
+        getPublicInvoiceLink(
+          updatedInvoice
+        );
+
+      if (!link) {
+        throw new Error(
+          "This invoice does not have a public link."
+        );
+      }
+
+      await navigator.clipboard.writeText(
+        link
+      );
+
+      setCopied(true);
+
+      setTimeout(() => {
+        setCopied(false);
+      }, 2000);
     } catch (err) {
       setError(
         err.response?.data?.message ||
           err.message ||
-          "Failed to initialize payment."
+          "Failed to send invoice."
+      );
+    } finally {
+      setSending(false);
+    }
+  };
+
+  // ============================================================
+  // SEND INVOICE MODAL
+  // ============================================================
+
+  const openSendModal = (invoice) => {
+    setSelectedInvoice(invoice);
+    setCopied(false);
+    setError("");
+    setShowSendModal(true);
+  };
+
+  const closeSendModal = () => {
+    if (sending) {
+      return;
+    }
+
+    setShowSendModal(false);
+    setSelectedInvoice(null);
+    setCopied(false);
+  };
+
+  // ============================================================
+  // COPY LINK
+  // ============================================================
+
+  const handleCopyLink = async () => {
+    if (!selectedInvoice) {
+      return;
+    }
+
+    const publicLink =
+      getPublicInvoiceLink(
+        selectedInvoice
+      );
+
+    if (!publicLink) {
+      setError(
+        "This invoice does not have a public link yet."
+      );
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(
+        publicLink
+      );
+
+      setCopied(true);
+
+      setTimeout(() => {
+        setCopied(false);
+      }, 2000);
+    } catch (err) {
+      setError(
+        "Unable to copy the invoice link. Please copy it manually."
       );
     }
   };
+
+  // ============================================================
+  // SEND REMINDER
+  // ============================================================
+
+  const openReminderModal = (invoice) => {
+    setSelectedInvoice(invoice);
+    setCopied(false);
+    setError("");
+    setShowReminderModal(true);
+  };
+
+  const closeReminderModal = () => {
+    if (reminding) {
+      return;
+    }
+
+    setShowReminderModal(false);
+    setSelectedInvoice(null);
+    setCopied(false);
+  };
+
+  const handleSendReminder = async () => {
+    if (!selectedInvoice) {
+      return;
+    }
+
+    try {
+      setReminding(true);
+      setError("");
+
+      const response = await api.patch(
+        `/invoices/${selectedInvoice._id}/remind`
+      );
+
+      const updatedInvoice =
+        getObjectResponse(
+          response.data,
+          "invoice"
+        );
+
+      if (!updatedInvoice) {
+        throw new Error(
+          "Updated invoice was not returned."
+        );
+      }
+
+      setInvoices((currentInvoices) =>
+        currentInvoices.map((invoice) =>
+          invoice._id ===
+          selectedInvoice._id
+            ? updatedInvoice
+            : invoice
+        )
+      );
+
+      setSelectedInvoice(
+        updatedInvoice
+      );
+
+      const publicLink =
+        getPublicInvoiceLink(
+          updatedInvoice
+        );
+
+      if (!publicLink) {
+        throw new Error(
+          "This invoice does not have a public link."
+        );
+      }
+
+      await navigator.clipboard.writeText(
+        publicLink
+      );
+
+      setCopied(true);
+
+      setTimeout(() => {
+        setCopied(false);
+      }, 2000);
+    } catch (err) {
+      setError(
+        err.response?.data?.message ||
+          err.message ||
+          "Failed to prepare invoice reminder."
+      );
+    } finally {
+      setReminding(false);
+    }
+  };
+
+  // ============================================================
+  // LOADING
+  // ============================================================
 
   if (loading) {
     return (
@@ -552,6 +885,10 @@ function Invoices() {
     );
   }
 
+  // ============================================================
+  // UI
+  // ============================================================
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -560,6 +897,7 @@ function Invoices() {
           <h1 className="text-2xl font-bold text-slate-900">
             Invoices
           </h1>
+
           <p className="mt-1 text-sm text-slate-500">
             Create, manage, and track your invoices.
           </p>
@@ -588,7 +926,9 @@ function Invoices() {
               type="text"
               value={search}
               onChange={(event) =>
-                setSearch(event.target.value)
+                setSearch(
+                  event.target.value
+                )
               }
               placeholder="Search invoices..."
               className="w-full rounded-lg border border-slate-300 px-4 py-2.5 text-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
@@ -598,15 +938,27 @@ function Invoices() {
           <select
             value={statusFilter}
             onChange={(event) =>
-              setStatusFilter(event.target.value)
+              setStatusFilter(
+                event.target.value
+              )
             }
             className="rounded-lg border border-slate-300 px-4 py-2.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
           >
-            <option value="all">All Statuses</option>
-            <option value="draft">Draft</option>
-            <option value="sent">Sent</option>
-            <option value="paid">Paid</option>
-            <option value="overdue">Overdue</option>
+            <option value="all">
+              All Statuses
+            </option>
+            <option value="draft">
+              Draft
+            </option>
+            <option value="sent">
+              Sent
+            </option>
+            <option value="paid">
+              Paid
+            </option>
+            <option value="overdue">
+              Overdue
+            </option>
             <option value="cancelled">
               Cancelled
             </option>
@@ -651,7 +1003,8 @@ function Invoices() {
             </thead>
 
             <tbody className="divide-y divide-slate-100">
-              {filteredInvoices.length === 0 ? (
+              {filteredInvoices.length ===
+              0 ? (
                 <tr>
                   <td
                     colSpan="7"
@@ -663,111 +1016,173 @@ function Invoices() {
                   </td>
                 </tr>
               ) : (
-                filteredInvoices.map((invoice) => (
-                  <tr
-                    key={invoice._id}
-                    className="transition hover:bg-slate-50"
-                  >
-                    <td className="px-6 py-4">
-                      <div className="font-semibold text-slate-900">
-                        {getInvoiceNumber(invoice)}
-                      </div>
-                    </td>
-
-                    <td className="px-6 py-4">
-                      <div className="text-sm font-medium text-slate-900">
-                        {getClientName(invoice)}
-                      </div>
-                    </td>
-
-                    <td className="px-6 py-4">
-                      <div className="text-sm text-slate-600">
-                        {getProjectName(invoice)}
-                      </div>
-                    </td>
-
-                    <td className="px-6 py-4">
-                      <div className="text-sm text-slate-600">
-                        {formatDate(invoice.dueDate)}
-                      </div>
-                    </td>
-
-                    <td className="px-6 py-4">
-                      <div className="text-sm font-semibold text-slate-900">
-                        {formatCurrency(
-                          invoice.total ??
-                            invoice.amount ??
-                            0
-                        )}
-                      </div>
-                    </td>
-
-                    <td className="px-6 py-4">
-                      <span
-                        className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${
-                          statusStyles[
-                            invoice.status
-                          ] ||
-                          "bg-slate-100 text-slate-700"
-                        }`}
-                      >
-                        {getStatusLabel(
-                          invoice.status
-                        )}
-                      </span>
-                    </td>
-
-                    <td className="px-6 py-4">
-                      <div className="flex justify-end gap-2">
-                        {invoice.status !== "paid" &&
-                          invoice.status !==
-                            "cancelled" && (
-                            <>
-                              <button
-                                onClick={() =>
-                                  openEditModal(
-                                    invoice
-                                  )
-                                }
-                                className="rounded-lg px-3 py-2 text-sm font-medium text-indigo-600 transition hover:bg-indigo-50"
-                              >
-                                Edit
-                              </button>
-
-                              <button
-                                onClick={() =>
-                                  handleDelete(
-                                    invoice
-                                  )
-                                }
-                                className="rounded-lg px-3 py-2 text-sm font-medium text-red-600 transition hover:bg-red-50"
-                              >
-                                Delete
-                              </button>
-
-                              <button
-                                onClick={() =>
-                                  handlePayNow(
-                                    invoice._id
-                                  )
-                                }
-                                className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-emerald-700"
-                              >
-                                Pay Now
-                              </button>
-                            </>
+                filteredInvoices.map(
+                  (invoice) => (
+                    <tr
+                      key={invoice._id}
+                      className="transition hover:bg-slate-50"
+                    >
+                      <td className="px-6 py-4">
+                        <div className="font-semibold text-slate-900">
+                          {getInvoiceNumber(
+                            invoice
                           )}
-                      </div>
-                    </td>
-                  </tr>
-                ))
+                        </div>
+                      </td>
+
+                      <td className="px-6 py-4">
+                        <div className="text-sm font-medium text-slate-900">
+                          {getClientName(
+                            invoice
+                          )}
+                        </div>
+                      </td>
+
+                      <td className="px-6 py-4">
+                        <div className="text-sm text-slate-600">
+                          {getProjectName(
+                            invoice
+                          )}
+                        </div>
+                      </td>
+
+                      <td className="px-6 py-4">
+                        <div className="text-sm text-slate-600">
+                          {formatDate(
+                            invoice.dueDate
+                          )}
+                        </div>
+                      </td>
+
+                      <td className="px-6 py-4">
+                        <div className="text-sm font-semibold text-slate-900">
+                          {formatCurrency(
+                            invoice.total ??
+                              invoice.amount ??
+                              0
+                          )}
+                        </div>
+                      </td>
+
+                      <td className="px-6 py-4">
+                        <span
+                          className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${
+                            statusStyles[
+                              invoice.status
+                            ] ||
+                            "bg-slate-100 text-slate-700"
+                          }`}
+                        >
+                          {getStatusLabel(
+                            invoice.status
+                          )}
+                        </span>
+                      </td>
+
+                      {/* Actions */}
+                      <td className="px-6 py-4">
+                        <div className="flex flex-wrap justify-end gap-2">
+                          {/* View */}
+                          <button
+                            onClick={() =>
+                              handleViewInvoice(
+                                invoice
+                              )
+                            }
+                            className="rounded-lg px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100"
+                          >
+                            View
+                          </button>
+
+                          {/* Edit + Delete */}
+                          {invoice.status !==
+                            "paid" &&
+                            invoice.status !==
+                              "cancelled" && (
+                              <>
+                                <button
+                                  onClick={() =>
+                                    openEditModal(
+                                      invoice
+                                    )
+                                  }
+                                  className="rounded-lg px-3 py-2 text-sm font-medium text-indigo-600 transition hover:bg-indigo-50"
+                                >
+                                  Edit
+                                </button>
+
+                                <button
+                                  onClick={() =>
+                                    handleDelete(
+                                      invoice
+                                    )
+                                  }
+                                  className="rounded-lg px-3 py-2 text-sm font-medium text-red-600 transition hover:bg-red-50"
+                                >
+                                  Delete
+                                </button>
+                              </>
+                            )}
+
+                          {/* Draft */}
+                          {invoice.status ===
+                            "draft" && (
+                            <button
+                              onClick={() =>
+                                openSendModal(
+                                  invoice
+                                )
+                              }
+                              className="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-indigo-700"
+                            >
+                              Send Invoice
+                            </button>
+                          )}
+
+                          {/* Sent */}
+                          {invoice.status ===
+                            "sent" && (
+                            <button
+                              onClick={() =>
+                                openSendModal(
+                                  invoice
+                                )
+                              }
+                              className="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-indigo-700"
+                            >
+                              Share Invoice
+                            </button>
+                          )}
+
+                          {/* Overdue */}
+                          {invoice.status ===
+                            "overdue" && (
+                            <button
+                              onClick={() =>
+                                openReminderModal(
+                                  invoice
+                                )
+                              }
+                              className="rounded-lg bg-red-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-red-700"
+                            >
+                              Send Reminder
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                )
               )}
             </tbody>
           </table>
         </div>
       </div>
 
-      {/* Create/Edit Modal */}
+      {/* ======================================================
+          CREATE / EDIT MODAL
+      ====================================================== */}
+
       {showForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white shadow-xl">
@@ -814,23 +1229,27 @@ function Invoices() {
                   <select
                     name="client"
                     value={formData.client}
-                    onChange={handleInputChange}
+                    onChange={
+                      handleInputChange
+                    }
                     className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
                   >
                     <option value="">
                       Select client
                     </option>
 
-                    {clients.map((client) => (
-                      <option
-                        key={client._id}
-                        value={client._id}
-                      >
-                        {client.name ||
-                          client.company ||
-                          "Unnamed client"}
-                      </option>
-                    ))}
+                    {clients.map(
+                      (client) => (
+                        <option
+                          key={client._id}
+                          value={client._id}
+                        >
+                          {client.name ||
+                            client.company ||
+                            "Unnamed client"}
+                        </option>
+                      )
+                    )}
                   </select>
                 </div>
 
@@ -842,7 +1261,9 @@ function Invoices() {
                   <select
                     name="project"
                     value={formData.project}
-                    onChange={handleInputChange}
+                    onChange={
+                      handleInputChange
+                    }
                     className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
                   >
                     <option value="">
@@ -876,7 +1297,9 @@ function Invoices() {
                     type="date"
                     name="dueDate"
                     value={formData.dueDate}
-                    onChange={handleInputChange}
+                    onChange={
+                      handleInputChange
+                    }
                     className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
                   />
                 </div>
@@ -890,9 +1313,12 @@ function Invoices() {
                     type="number"
                     name="tax"
                     min="0"
+                    max="100"
                     step="0.01"
                     value={formData.tax}
-                    onChange={handleInputChange}
+                    onChange={
+                      handleInputChange
+                    }
                     className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
                   />
                 </div>
@@ -929,12 +1355,17 @@ function Invoices() {
 
                             <input
                               type="text"
-                              value={item.description}
-                              onChange={(event) =>
+                              value={
+                                item.description
+                              }
+                              onChange={(
+                                event
+                              ) =>
                                 handleItemChange(
                                   index,
                                   "description",
-                                  event.target.value
+                                  event.target
+                                    .value
                                 )
                               }
                               placeholder="e.g. Website development"
@@ -950,12 +1381,17 @@ function Invoices() {
                             <input
                               type="number"
                               min="1"
-                              value={item.quantity}
-                              onChange={(event) =>
+                              value={
+                                item.quantity
+                              }
+                              onChange={(
+                                event
+                              ) =>
                                 handleItemChange(
                                   index,
                                   "quantity",
-                                  event.target.value
+                                  event.target
+                                    .value
                                 )
                               }
                               className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
@@ -971,12 +1407,17 @@ function Invoices() {
                               type="number"
                               min="0"
                               step="0.01"
-                              value={item.unitPrice}
-                              onChange={(event) =>
+                              value={
+                                item.unitPrice
+                              }
+                              onChange={(
+                                event
+                              ) =>
                                 handleItemChange(
                                   index,
                                   "unitPrice",
-                                  event.target.value
+                                  event.target
+                                    .value
                                 )
                               }
                               placeholder="0.00"
@@ -988,10 +1429,13 @@ function Invoices() {
                             <button
                               type="button"
                               onClick={() =>
-                                removeItem(index)
+                                removeItem(
+                                  index
+                                )
                               }
                               disabled={
-                                formData.items.length ===
+                                formData.items
+                                  .length ===
                                 1
                               }
                               className="rounded-lg px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40"
@@ -1021,26 +1465,38 @@ function Invoices() {
               <div className="ml-auto max-w-sm space-y-2 rounded-xl bg-slate-50 p-4">
                 <div className="flex justify-between text-sm text-slate-600">
                   <span>Subtotal</span>
+
                   <span>
-                    {formatCurrency(subtotal)}
+                    {formatCurrency(
+                      subtotal
+                    )}
                   </span>
                 </div>
 
                 <div className="flex justify-between text-sm text-slate-600">
                   <span>
-                    Tax ({Number(formData.tax) || 0}%)
+                    Tax (
+                    {Number(
+                      formData.tax
+                    ) || 0}
+                    %)
                   </span>
 
                   <span>
-                    {formatCurrency(taxAmount)}
+                    {formatCurrency(
+                      taxAmount
+                    )}
                   </span>
                 </div>
 
                 <div className="border-t border-slate-200 pt-2">
                   <div className="flex justify-between text-base font-bold text-slate-900">
                     <span>Total</span>
+
                     <span>
-                      {formatCurrency(total)}
+                      {formatCurrency(
+                        total
+                      )}
                     </span>
                   </div>
                 </div>
@@ -1073,6 +1529,316 @@ function Invoices() {
           </div>
         </div>
       )}
+
+      {/* ======================================================
+          SEND INVOICE MODAL
+      ====================================================== */}
+
+      {showSendModal &&
+        selectedInvoice && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+            <div className="w-full max-w-md rounded-2xl bg-white shadow-xl">
+              <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+                <div>
+                  <h2 className="text-lg font-bold text-slate-900">
+                    {selectedInvoice.status ===
+                    "sent"
+                      ? "Share Invoice"
+                      : "Send Invoice"}
+                  </h2>
+
+                  <p className="mt-1 text-sm text-slate-500">
+                    {selectedInvoice.status ===
+                    "sent"
+                      ? "Share this invoice with your client."
+                      : "Mark the invoice as sent and share it with your client."}
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={
+                    closeSendModal
+                  }
+                  disabled={sending}
+                  className="text-2xl text-slate-400 transition hover:text-slate-700 disabled:cursor-not-allowed"
+                >
+                  ×
+                </button>
+              </div>
+
+              <div className="space-y-5 p-6">
+                {/* Invoice summary */}
+                <div className="rounded-xl bg-slate-50 p-4">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900">
+                        {getInvoiceNumber(
+                          selectedInvoice
+                        )}
+                      </p>
+
+                      <p className="mt-1 text-sm text-slate-500">
+                        {getClientName(
+                          selectedInvoice
+                        )}
+                      </p>
+                    </div>
+
+                    <p className="text-sm font-bold text-slate-900">
+                      {formatCurrency(
+                        selectedInvoice.total ??
+                          selectedInvoice.amount ??
+                          0
+                      )}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Link */}
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-slate-700">
+                    Invoice Link
+                  </label>
+
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      readOnly
+                      value={
+                        getPublicInvoiceLink(
+                          selectedInvoice
+                        ) ||
+                        "Public link unavailable"
+                      }
+                      className="min-w-0 flex-1 rounded-lg border border-slate-300 bg-slate-50 px-3 py-2.5 text-sm text-slate-600 outline-none"
+                    />
+
+                    <button
+                      type="button"
+                      onClick={
+                        handleCopyLink
+                      }
+                      disabled={
+                        sending ||
+                        !getPublicInvoiceLink(
+                          selectedInvoice
+                        )
+                      }
+                      className="shrink-0 rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {copied
+                        ? "Copied!"
+                        : "Copy"}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Info */}
+                <div className="rounded-lg border border-indigo-100 bg-indigo-50 px-4 py-3">
+                  <p className="text-sm text-indigo-700">
+                    Send this link to your
+                    client. They can view the
+                    invoice and pay securely
+                    without needing a DevTrack
+                    account.
+                  </p>
+                </div>
+
+                {/* Main Send / Share button */}
+                <button
+                  type="button"
+                  onClick={
+                    handleSendInvoice
+                  }
+                  disabled={
+                    sending ||
+                    !getPublicInvoiceLink(
+                      selectedInvoice
+                    )
+                  }
+                  className="w-full rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {sending
+                    ? "Processing..."
+                    : selectedInvoice.status ===
+                      "sent"
+                    ? copied
+                      ? "Link Copied!"
+                      : "Copy Invoice Link"
+                    : copied
+                    ? "Invoice Sent & Link Copied!"
+                    : "Send & Copy Link"}
+                </button>
+
+                {/* Close */}
+                <button
+                  type="button"
+                  onClick={
+                    closeSendModal
+                  }
+                  disabled={sending}
+                  className="w-full rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Done
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+      {/* ======================================================
+          SEND REMINDER MODAL
+      ====================================================== */}
+
+      {showReminderModal &&
+        selectedInvoice && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+            <div className="w-full max-w-md rounded-2xl bg-white shadow-xl">
+              <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+                <div>
+                  <h2 className="text-lg font-bold text-slate-900">
+                    Send Reminder
+                  </h2>
+
+                  <p className="mt-1 text-sm text-slate-500">
+                    Remind your client about this
+                    overdue invoice.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={
+                    closeReminderModal
+                  }
+                  disabled={reminding}
+                  className="text-2xl text-slate-400 transition hover:text-slate-700 disabled:cursor-not-allowed"
+                >
+                  ×
+                </button>
+              </div>
+
+              <div className="space-y-5 p-6">
+                {/* Invoice summary */}
+                <div className="rounded-xl border border-red-100 bg-red-50 p-4">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900">
+                        {getInvoiceNumber(
+                          selectedInvoice
+                        )}
+                      </p>
+
+                      <p className="mt-1 text-sm text-slate-600">
+                        {getClientName(
+                          selectedInvoice
+                        )}
+                      </p>
+
+                      <p className="mt-2 text-xs font-medium text-red-600">
+                        Due{" "}
+                        {formatDate(
+                          selectedInvoice.dueDate
+                        )}
+                      </p>
+                    </div>
+
+                    <p className="text-sm font-bold text-slate-900">
+                      {formatCurrency(
+                        selectedInvoice.total ??
+                          selectedInvoice.amount ??
+                          0
+                      )}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Link */}
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-slate-700">
+                    Invoice Link
+                  </label>
+
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      readOnly
+                      value={
+                        getPublicInvoiceLink(
+                          selectedInvoice
+                        ) ||
+                        "Public link unavailable"
+                      }
+                      className="min-w-0 flex-1 rounded-lg border border-slate-300 bg-slate-50 px-3 py-2.5 text-sm text-slate-600 outline-none"
+                    />
+
+                    <button
+                      type="button"
+                      onClick={
+                        handleCopyLink
+                      }
+                      disabled={
+                        reminding ||
+                        !getPublicInvoiceLink(
+                          selectedInvoice
+                        )
+                      }
+                      className="shrink-0 rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {copied
+                        ? "Copied!"
+                        : "Copy"}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Reminder info */}
+                <div className="rounded-lg border border-red-100 bg-red-50 px-4 py-3">
+                  <p className="text-sm text-red-700">
+                    The invoice is overdue. Copy
+                    the link below and send it to
+                    your client as a payment
+                    reminder.
+                  </p>
+                </div>
+
+                {/* Reminder button */}
+                <button
+                  type="button"
+                  onClick={
+                    handleSendReminder
+                  }
+                  disabled={
+                    reminding ||
+                    !getPublicInvoiceLink(
+                      selectedInvoice
+                    )
+                  }
+                  className="w-full rounded-lg bg-red-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {reminding
+                    ? "Preparing Reminder..."
+                    : copied
+                    ? "Reminder Link Copied!"
+                    : "Prepare & Copy Reminder Link"}
+                </button>
+
+                {/* Close */}
+                <button
+                  type="button"
+                  onClick={
+                    closeReminderModal
+                  }
+                  disabled={reminding}
+                  className="w-full rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Done
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
     </div>
   );
 }

@@ -27,15 +27,27 @@ const initializeTransaction = async ({
     }
   );
 
-  return response.data;
+  const data = response.data?.data;
+
+  if (!data?.authorization_url) {
+    throw new Error(
+      "Paystack did not return a checkout URL"
+    );
+  }
+
+  return {
+    checkoutUrl: data.authorization_url,
+    accessCode: data.access_code,
+    reference: data.reference || reference,
+  };
 };
 
 const verifyTransaction = async (reference) => {
   const response = await paystack.get(
-    `/transaction/verify/${reference}`
+    `/transaction/verify/${encodeURIComponent(reference)}`
   );
 
-  return response.data;
+  return response.data?.data;
 };
 
 module.exports = {

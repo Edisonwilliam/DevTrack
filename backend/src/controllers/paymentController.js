@@ -8,38 +8,29 @@ const {
   verifyTransaction,
 } = require("../services/paystackService");
 
-
 // ============================================================
-// HELPER: GET EXPECTED PAYMENT AMOUNT
+// HELPERS
 // ============================================================
-//
-// Invoice.total is stored in NAIRA.
-//
-// Payment.amount and Paystack amount are stored in KOBO.
-//
-// Example:
-// Invoice total = ₦50,000
-// Expected payment = 5,000,000 kobo
-//
 
 const getInvoiceAmountInKobo = (invoice) => {
-  if (!invoice) {
-    return 0;
-  }
+  if (!invoice) return 0;
 
-  if (
-    !Number.isFinite(invoice.total) ||
-    invoice.total <= 0
-  ) {
+  if (!Number.isFinite(invoice.total) || invoice.total <= 0) {
     return 0;
   }
 
   return Math.round(invoice.total * 100);
 };
 
+const generatePaymentReference = (invoiceId) => {
+  return `DEVTRACK-${invoiceId}-${Date.now()}-${Math.random()
+    .toString(36)
+    .substring(2, 8)
+    .toUpperCase()}`;
+};
 
 // ============================================================
-// INITIALIZE PAYMENT
+// INITIALIZE AUTHENTICATED PAYMENT
 // ============================================================
 
 const initializePayment = async (req, res) => {
@@ -63,275 +54,259 @@ const initializePayment = async (req, res) => {
       });
     }
 
-    // Already paid invoices cannot be paid again.
     if (invoice.status === "paid") {
       return res.status(400).json({
         message: "This invoice has already been paid",
       });
     }
 
-    // Cancelled invoices cannot be paid.
     if (invoice.status === "cancelled") {
       return res.status(400).json({
-        message: "Cancelled invoices cannot be paid",
+        message: "This invoice has been cancelled",
       });
     }
 
-    // Invoice must have a client.
     if (!invoice.client) {
       return res.status(400).json({
-        message: "This invoice does not have a client",
+        message: "Invoice client not found",
       });
     }
 
-    // Paystack requires an email.
     if (!invoice.client.email) {
       return res.status(400).json({
-        message:
-          "The invoice client does not have an email address",
+        message: "Client email is required for payment",
       });
     }
 
-    // Validate invoice total.
-    if (
-      !Number.isFinite(invoice.total) ||
-      invoice.total <= 0
-    ) {
+    const amountInKobo = getInvoiceAmountInKobo(invoice);
+
+    if (!amountInKobo) {
       return res.status(400).json({
-        message:
-          "Invoice total must be greater than zero",
+        message: "Invoice total must be greater than zero",
       });
     }
 
-    // Convert invoice amount from NAIRA to KOBO.
-    const amountInKobo =
-      getInvoiceAmountInKobo(invoice);
-
-    if (amountInKobo <= 0) {
-      return res.status(400).json({
-        message:
-          "Payment amount must be greater than zero",
-      });
-    }
-
-    // ========================================================
-    // CHECK FOR EXISTING PENDING PAYMENT
-    // ========================================================
-
-    const existingPayment =
-      await Payment.findOne({
-        invoice: invoice._id,
-        user: req.user.userId,
-        status: "pending",
-      }).sort({
-        createdAt: -1,
-      });
-
-    if (existingPayment) {
-      // The invoice may have changed since the payment
-      // was created.
-      if (
-        existingPayment.amount !== amountInKobo
-      ) {
-        console.warn(
-          "Existing payment amount no longer matches invoice."
-        );
-
-        existingPayment.status = "abandoned";
-
-        await existingPayment.save();
-      } else {
-        // Try to resume the existing Paystack transaction.
-        try {
-          const callbackUrl = `${
-            process.env.FRONTEND_URL ||
-            "http://localhost:5173"
-          }/payment/callback`;
-
-          const paystackResponse =
-            await initializeTransaction({
-              email: invoice.client.email,
-
-              amount: existingPayment.amount,
-
-              reference:
-                existingPayment.reference,
-
-              metadata: {
-                invoiceId:
-                  invoice._id.toString(),
-
-                paymentId:
-                  existingPayment._id.toString(),
-
-                userId:
-                  req.user.userId.toString(),
-              },
-
-              callbackUrl,
-            });
-
-          if (
-            paystackResponse?.status &&
-            paystackResponse?.data
-              ?.authorization_url
-          ) {
-            return res.status(200).json({
-              message:
-                "Existing payment resumed",
-
-              checkoutUrl:
-                paystackResponse.data
-                  .authorization_url,
-
-              accessCode:
-                paystackResponse.data
-                  .access_code,
-
-              reference:
-                paystackResponse.data
-                  .reference ||
-                existingPayment.reference,
-
-              amount:
-                existingPayment.amount,
-
-              currency:
-                existingPayment.currency,
-            });
-          }
-        } catch (error) {
-          console.error(
-            "Failed to resume existing Paystack payment:",
-            error.response?.data ||
-              error.message
-          );
-        }
-
-        // Existing transaction could not be resumed.
-        existingPayment.status = "abandoned";
-
-        await existingPayment.save();
-      }
-    }
-
-    // ========================================================
-    // CREATE NEW PAYMENT
-    // ========================================================
-
-    const reference =
-      `DEVTRACK-${invoice._id}-${Date.now()}`;
-
-    const payment = await Payment.create({
+    let payment = await Payment.findOne({
       invoice: invoice._id,
-
       user: req.user.userId,
-
-      reference,
-
-      // KOBO
-      amount: amountInKobo,
-
-      currency: "NGN",
-
       status: "pending",
     });
 
+    if (!payment) {
+      payment = await Payment.create({
+        invoice: invoice._id,
+        user: req.user.userId,
+        reference: generatePaymentReference(invoice._id),
+        amount: amountInKobo,
+        currency: "NGN",
+        status: "pending",
+      });
+    } else {
+      payment.reference = generatePaymentReference(invoice._id);
+      payment.amount = amountInKobo;
+      payment.currency = "NGN";
+
+      await payment.save();
+    }
+
     try {
       const callbackUrl = `${
-        process.env.FRONTEND_URL ||
-        "http://localhost:5173"
+        process.env.FRONTEND_URL || "http://localhost:5173"
       }/payment/callback`;
 
-      const paystackResponse =
-        await initializeTransaction({
-          email: invoice.client.email,
-
-          // KOBO
-          amount: amountInKobo,
-
-          reference,
-
-          metadata: {
-            invoiceId:
-              invoice._id.toString(),
-
-            paymentId:
-              payment._id.toString(),
-
-            userId:
-              req.user.userId.toString(),
-          },
-
-          callbackUrl,
-        });
-
-      if (
-        !paystackResponse?.status ||
-        !paystackResponse?.data
-          ?.authorization_url
-      ) {
-        await Payment.findByIdAndDelete(
-          payment._id
-        );
-
-        return res.status(502).json({
-          message:
-            "Paystack payment initialization failed",
-        });
-      }
+      const transaction = await initializeTransaction({
+        email: invoice.client.email,
+        amount: amountInKobo,
+        reference: payment.reference,
+        callbackUrl,
+        metadata: {
+          invoiceId: invoice._id.toString(),
+          paymentId: payment._id.toString(),
+          userId: req.user.userId.toString(),
+        },
+      });
 
       return res.status(200).json({
-        message:
-          "Payment initialized successfully",
-
-        checkoutUrl:
-          paystackResponse.data
-            .authorization_url,
-
-        accessCode:
-          paystackResponse.data
-            .access_code,
-
-        reference:
-          paystackResponse.data.reference ||
-          reference,
-
+        message: "Payment initialized successfully",
+        checkoutUrl: transaction.checkoutUrl,
+        accessCode: transaction.accessCode,
+        reference: transaction.reference || payment.reference,
+        paymentId: payment._id,
         amount: amountInKobo,
-
         currency: "NGN",
       });
     } catch (error) {
       console.error(
         "Paystack initialization error:",
-        error.response?.data ||
-          error.message
+        error.response?.data || error.message
       );
 
-      await Payment.findByIdAndDelete(
-        payment._id
-      );
-
-      return res.status(502).json({
-        message:
-          "Failed to initialize payment with Paystack",
+      return res.status(500).json({
+        message: "Unable to initialize payment",
       });
     }
   } catch (error) {
-    console.error(
-      "Initialize payment error:",
-      error
-    );
+    console.error("Initialize payment error:", error);
 
     return res.status(500).json({
-      message: "Server error",
+      message: "Server error while initializing payment",
     });
   }
 };
 
+// ============================================================
+// INITIALIZE PUBLIC INVOICE PAYMENT
+// ============================================================
+
+const initializePublicPayment = async (req, res) => {
+  try {
+    const { token } = req.body;
+
+    if (!token) {
+      return res.status(400).json({
+        message: "Invoice token is required",
+      });
+    }
+
+    const invoice = await Invoice.findOne({
+      publicToken: token,
+    }).populate("client", "name email");
+
+    if (!invoice) {
+      return res.status(404).json({
+        message: "Invoice not found",
+      });
+    }
+
+    if (invoice.status === "paid") {
+      return res.status(400).json({
+        message: "This invoice has already been paid",
+      });
+    }
+
+    if (invoice.status === "cancelled") {
+      return res.status(400).json({
+        message: "This invoice has been cancelled",
+      });
+    }
+
+    if (!invoice.client) {
+      return res.status(400).json({
+        message: "Invoice client not found",
+      });
+    }
+
+    if (!invoice.client.email) {
+      return res.status(400).json({
+        message: "This invoice does not have a client email address",
+      });
+    }
+
+    const amountInKobo = getInvoiceAmountInKobo(invoice);
+
+    if (!amountInKobo) {
+      return res.status(400).json({
+        message: "Invoice total must be greater than zero",
+      });
+    }
+
+    if (!invoice.user) {
+      return res.status(400).json({
+        message: "Invoice owner not found",
+      });
+    }
+
+    // ========================================================
+    // FIND EXISTING PENDING PAYMENT
+    // ========================================================
+
+    let payment = await Payment.findOne({
+      invoice: invoice._id,
+      user: invoice.user,
+      status: "pending",
+    });
+
+    // ========================================================
+    // CREATE OR REFRESH PAYMENT
+    // ========================================================
+
+    if (!payment) {
+      payment = await Payment.create({
+        invoice: invoice._id,
+        user: invoice.user,
+        reference: generatePaymentReference(invoice._id),
+        amount: amountInKobo,
+        currency: "NGN",
+        status: "pending",
+      });
+    } else {
+      /*
+       * Paystack references can only be used once.
+       *
+       * The old reference may already exist on Paystack,
+       * even though our database payment is still pending.
+       *
+       * Therefore generate a completely new reference.
+       */
+      payment.reference = generatePaymentReference(invoice._id);
+      payment.amount = amountInKobo;
+      payment.currency = "NGN";
+
+      await payment.save();
+    }
+
+    // ========================================================
+    // INITIALIZE PAYSTACK
+    // ========================================================
+
+    try {
+      const callbackUrl = `${
+        process.env.FRONTEND_URL || "http://localhost:5173"
+      }/payment/callback`;
+
+      const transaction = await initializeTransaction({
+        email: invoice.client.email,
+        amount: amountInKobo,
+        reference: payment.reference,
+        callbackUrl,
+        metadata: {
+          invoiceId: invoice._id.toString(),
+          paymentId: payment._id.toString(),
+          userId: invoice.user.toString(),
+          publicPayment: true,
+        },
+      });
+
+      return res.status(200).json({
+        message: "Payment initialized successfully",
+        checkoutUrl: transaction.checkoutUrl,
+        accessCode: transaction.accessCode,
+        reference: transaction.reference || payment.reference,
+        paymentId: payment._id,
+        amount: amountInKobo,
+        currency: "NGN",
+      });
+    } catch (error) {
+      console.error(
+        "Public Paystack initialization error:",
+        error.response?.data || error.message
+      );
+
+      return res.status(500).json({
+        message: "Unable to initialize payment",
+      });
+    }
+  } catch (error) {
+    console.error("Initialize public payment error:", error);
+
+    return res.status(500).json({
+      message: "Server error while initializing public payment",
+    });
+  }
+};
 
 // ============================================================
-// VERIFY PAYMENT
+// VERIFY AUTHENTICATED PAYMENT
 // ============================================================
 
 const verifyPayment = async (req, res) => {
@@ -340,12 +315,10 @@ const verifyPayment = async (req, res) => {
 
     if (!reference) {
       return res.status(400).json({
-        message:
-          "Payment reference is required",
+        message: "Payment reference is required",
       });
     }
 
-    // Only allow the owner of the payment to verify it.
     const payment = await Payment.findOne({
       reference,
       user: req.user.userId,
@@ -357,370 +330,310 @@ const verifyPayment = async (req, res) => {
       });
     }
 
-    if (!payment.invoice) {
-      return res.status(400).json({
-        message:
-          "The invoice associated with this payment was not found",
+    if (payment.status === "success") {
+      return res.status(200).json({
+        message: "Payment already verified",
+        status: "success",
+        payment,
+        invoice: payment.invoice,
       });
     }
 
-    // ========================================================
-    // IDEMPOTENCY
-    // ========================================================
-    //
-    // If already successful, don't verify again.
-    //
+    const invoice = payment.invoice;
 
-    if (payment.status === "success") {
-      const updatedPayment =
-        await Payment.findById(payment._id)
-          .populate({
-            path: "invoice",
-            select:
-              "invoiceNumber total status dueDate",
-            populate: {
-              path: "client",
-              select: "name email",
-            },
-          });
+    if (!invoice) {
+      return res.status(404).json({
+        message: "Invoice associated with payment not found",
+      });
+    }
+
+    if (invoice.status === "paid") {
+      payment.status = "success";
+      payment.paidAt = payment.paidAt || new Date();
+
+      await payment.save();
 
       return res.status(200).json({
-        message:
-          "Payment already verified",
-
+        message: "Invoice is already marked as paid",
         status: "success",
-
-        payment: updatedPayment,
+        payment,
+        invoice,
       });
     }
 
-    // ========================================================
-    // CHECK INVOICE STATUS
-    // ========================================================
+    const invoiceAmount = getInvoiceAmountInKobo(invoice);
 
-    if (payment.invoice.status === "paid") {
+    if (payment.amount !== invoiceAmount) {
       return res.status(400).json({
-        message:
-          "This invoice has already been marked as paid",
+        message: "Payment amount does not match invoice amount",
       });
     }
 
-    // ========================================================
-    // CHECK INTERNAL AMOUNT
-    // ========================================================
+    const transaction = await verifyTransaction(reference);
 
-    const expectedAmountInKobo =
-      getInvoiceAmountInKobo(
-        payment.invoice
-      );
+    if (!transaction || transaction.status !== "success") {
+      return res.status(400).json({
+        message: "Payment has not been completed",
+        status: transaction?.status || "unknown",
+      });
+    }
+
+    if (Number(transaction.amount) !== payment.amount) {
+      return res.status(400).json({
+        message: "Verified payment amount does not match invoice amount",
+      });
+    }
 
     if (
-      payment.amount !==
-      expectedAmountInKobo
-    ) {
-      console.error(
-        "Payment amount mismatch:",
-        {
-          paymentId:
-            payment._id.toString(),
-
-          invoiceId:
-            payment.invoice._id.toString(),
-
-          invoiceTotalNaira:
-            payment.invoice.total,
-
-          expectedAmountInKobo,
-
-          paymentAmountInKobo:
-            payment.amount,
-        }
-      );
-
-      return res.status(400).json({
-        message:
-          "Payment amount does not match the invoice amount",
-      });
-    }
-
-    // ========================================================
-    // VERIFY WITH PAYSTACK
-    // ========================================================
-
-    let paystackResponse;
-
-    try {
-      paystackResponse =
-        await verifyTransaction(reference);
-    } catch (error) {
-      console.error(
-        "Paystack verification error:",
-        error.response?.data ||
-          error.message
-      );
-
-      return res.status(502).json({
-        message:
-          "Failed to verify payment with Paystack",
-      });
-    }
-
-    const transaction =
-      paystackResponse?.data;
-
-    if (!transaction) {
-      return res.status(400).json({
-        message:
-          "Invalid response from Paystack",
-      });
-    }
-
-    // ========================================================
-    // PAYMENT STATUS
-    // ========================================================
-
-    if (transaction.status !== "success") {
-      return res.status(400).json({
-        message:
-          transaction.gateway_response ||
-          "Payment has not been completed",
-
-        status:
-          transaction.status,
-      });
-    }
-
-    // ========================================================
-    // AMOUNT CHECK
-    // ========================================================
-    //
-    // Paystack amount = KOBO
-    // Payment.amount = KOBO
-    //
-    // Therefore compare directly.
-    //
-
-    if (
-      Number(transaction.amount) !==
-      Number(payment.amount)
-    ) {
-      console.error(
-        "Paystack amount mismatch:",
-        {
-          reference,
-
-          paystackAmount:
-            transaction.amount,
-
-          paymentAmount:
-            payment.amount,
-        }
-      );
-
-      return res.status(400).json({
-        message:
-          "The Paystack payment amount does not match the invoice amount",
-      });
-    }
-
-    // ========================================================
-    // CURRENCY CHECK
-    // ========================================================
-
-    if (
-      transaction.currency !==
-      payment.currency
+      transaction.currency &&
+      transaction.currency.toUpperCase() !== payment.currency
     ) {
       return res.status(400).json({
-        message:
-          "Payment currency does not match",
+        message: "Payment currency does not match",
       });
     }
-
-    // ========================================================
-    // MARK PAYMENT SUCCESS
-    // ========================================================
 
     payment.status = "success";
-
-    payment.paidAt =
-      transaction.paid_at
-        ? new Date(
-            transaction.paid_at
-          )
-        : new Date();
+    payment.paidAt = new Date();
 
     await payment.save();
 
-    // Mark invoice paid.
-    await Invoice.findByIdAndUpdate(
-      payment.invoice._id,
-      {
-        status: "paid",
-      }
-    );
+    invoice.status = "paid";
 
-    // Return updated payment.
-    const updatedPayment =
-      await Payment.findById(
-        payment._id
-      ).populate({
-        path: "invoice",
-        select:
-          "invoiceNumber total status dueDate",
-        populate: {
-          path: "client",
-          select: "name email",
-        },
-      });
+    await invoice.save();
 
     return res.status(200).json({
-      message:
-        "Payment verified successfully",
-
+      message: "Payment verified successfully",
       status: "success",
-
-      payment: updatedPayment,
+      payment,
+      invoice,
     });
   } catch (error) {
-    console.error(
-      "Verify payment error:",
-      error
-    );
+    console.error("Verify payment error:", error);
 
     return res.status(500).json({
-      message: "Server error",
+      message: "Server error while verifying payment",
     });
   }
 };
 
+// ============================================================
+// VERIFY PUBLIC INVOICE PAYMENT
+// ============================================================
+
+const verifyPublicPayment = async (req, res) => {
+  try {
+    const { reference } = req.params;
+
+    if (!reference) {
+      return res.status(400).json({
+        message: "Payment reference is required",
+      });
+    }
+
+    const payment = await Payment.findOne({
+      reference,
+    }).populate("invoice");
+
+    if (!payment) {
+      return res.status(404).json({
+        message: "Payment not found",
+      });
+    }
+
+    const invoice = payment.invoice;
+
+    if (!invoice) {
+      return res.status(404).json({
+        message: "Invoice associated with payment not found",
+      });
+    }
+
+    if (!invoice.publicToken) {
+      return res.status(400).json({
+        message: "This payment is not a public invoice payment",
+      });
+    }
+
+    if (payment.status === "success") {
+      return res.status(200).json({
+        message: "Payment already verified",
+        status: "success",
+        payment,
+        invoice,
+      });
+    }
+
+    if (invoice.status === "paid") {
+      payment.status = "success";
+      payment.paidAt = payment.paidAt || new Date();
+
+      await payment.save();
+
+      return res.status(200).json({
+        message: "Invoice is already marked as paid",
+        status: "success",
+        payment,
+        invoice,
+      });
+    }
+
+    const invoiceAmount = getInvoiceAmountInKobo(invoice);
+
+    if (!invoiceAmount) {
+      return res.status(400).json({
+        message: "Invoice total must be greater than zero",
+      });
+    }
+
+    if (payment.amount !== invoiceAmount) {
+      return res.status(400).json({
+        message: "Payment amount does not match invoice amount",
+      });
+    }
+
+    const transaction = await verifyTransaction(reference);
+
+    if (!transaction || transaction.status !== "success") {
+      return res.status(400).json({
+        message: "Payment has not been completed",
+        status: transaction?.status || "unknown",
+      });
+    }
+
+    if (Number(transaction.amount) !== payment.amount) {
+      return res.status(400).json({
+        message: "Verified payment amount does not match invoice amount",
+      });
+    }
+
+    if (
+      transaction.currency &&
+      transaction.currency.toUpperCase() !== payment.currency
+    ) {
+      return res.status(400).json({
+        message: "Payment currency does not match",
+      });
+    }
+
+    payment.status = "success";
+    payment.paidAt = new Date();
+
+    await payment.save();
+
+    invoice.status = "paid";
+
+    await invoice.save();
+
+    return res.status(200).json({
+      message: "Payment verified successfully",
+      status: "success",
+      payment,
+      invoice,
+    });
+  } catch (error) {
+    console.error("Verify public payment error:", error);
+
+    return res.status(500).json({
+      message: "Server error while verifying public payment",
+    });
+  }
+};
 
 // ============================================================
-// GET PAYMENTS
+// GET CURRENT USER PAYMENTS
 // ============================================================
 
 const getPayments = async (req, res) => {
   try {
-    const payments =
-      await Payment.find({
-        user: req.user.userId,
-      })
-        .populate({
-          path: "invoice",
-          select:
-            "invoiceNumber total status dueDate",
-          populate: {
+    const payments = await Payment.find({
+      user: req.user.userId,
+    })
+      .populate({
+        path: "invoice",
+        select:
+          "invoiceNumber client project total status issueDate dueDate",
+        populate: [
+          {
             path: "client",
-            select: "name email",
+            select: "name email company",
           },
-        })
-        .sort({
-          createdAt: -1,
-        });
+          {
+            path: "project",
+            select: "name status",
+          },
+        ],
+      })
+      .sort({ createdAt: -1 });
 
-    return res.status(200).json(
-      payments
-    );
+    return res.status(200).json(payments);
   } catch (error) {
-    console.error(
-      "Get payments error:",
-      error
-    );
+    console.error("Get payments error:", error);
 
     return res.status(500).json({
-      message:
-        "Failed to fetch payments",
+      message: "Server error while fetching payments",
     });
   }
 };
-
 
 // ============================================================
 // PAYSTACK WEBHOOK
 // ============================================================
 
-const handlePaystackWebhook = async (
-  req,
-  res
-) => {
+const handlePaystackWebhook = async (req, res) => {
   try {
-    const signature =
-      req.headers[
-        "x-paystack-signature"
-      ];
+    const signature = req.headers["x-paystack-signature"];
 
     if (!signature) {
       return res.status(401).json({
-        message:
-          "Missing Paystack signature",
+        message: "Missing Paystack signature",
       });
     }
 
     if (!req.rawBody) {
+      console.error("Webhook raw body is unavailable");
+
       return res.status(400).json({
-        message:
-          "Raw webhook body is missing",
+        message: "Webhook raw body is required",
       });
     }
 
-    // ========================================================
-    // VERIFY WEBHOOK SIGNATURE
-    // ========================================================
+    const secretKey = process.env.PAYSTACK_SECRET_KEY;
 
-    const expectedSignature =
-      crypto
-        .createHmac(
-          "sha512",
-          process.env.PAYSTACK_SECRET_KEY
-        )
-        .update(req.rawBody)
-        .digest("hex");
+    if (!secretKey) {
+      console.error("PAYSTACK_SECRET_KEY is not configured");
 
-    const receivedBuffer =
-      Buffer.from(signature);
+      return res.status(500).json({
+        message: "Payment configuration error",
+      });
+    }
 
-    const expectedBuffer =
-      Buffer.from(
-        expectedSignature
-      );
+    const hash = crypto
+      .createHmac("sha512", secretKey)
+      .update(req.rawBody)
+      .digest("hex");
+
+    const signatureBuffer = Buffer.from(signature, "utf8");
+    const hashBuffer = Buffer.from(hash, "utf8");
 
     if (
-      receivedBuffer.length !==
-      expectedBuffer.length
+      signatureBuffer.length !== hashBuffer.length ||
+      !crypto.timingSafeEqual(signatureBuffer, hashBuffer)
     ) {
       return res.status(401).json({
-        message:
-          "Invalid Paystack signature",
-      });
-    }
-
-    const signaturesMatch =
-      crypto.timingSafeEqual(
-        receivedBuffer,
-        expectedBuffer
-      );
-
-    if (!signaturesMatch) {
-      return res.status(401).json({
-        message:
-          "Invalid Paystack signature",
+        message: "Invalid Paystack signature",
       });
     }
 
     const event = req.body;
 
-    // We only care about successful charges.
-    if (
-      event.event !==
-      "charge.success"
-    ) {
+    if (event?.event !== "charge.success") {
       return res.status(200).json({
         received: true,
       });
     }
 
-    const transaction =
-      event.data;
+    const transaction = event.data;
 
     if (!transaction?.reference) {
       return res.status(200).json({
@@ -728,43 +641,19 @@ const handlePaystackWebhook = async (
       });
     }
 
-    // ========================================================
-    // FIND PAYMENT
-    // ========================================================
-
-    const payment =
-      await Payment.findOne({
-        reference:
-          transaction.reference,
-      }).populate("invoice");
+    const payment = await Payment.findOne({
+      reference: transaction.reference,
+    }).populate("invoice");
 
     if (!payment) {
-      console.warn(
-        "Webhook payment not found:",
-        transaction.reference
-      );
-
-      // Return 200 so Paystack doesn't keep retrying
-      // an event for a payment our database doesn't know.
-      return res.status(200).json({
-        received: true,
-      });
-    }
-
-    if (!payment.invoice) {
-      console.warn(
-        "Webhook invoice not found:",
-        payment._id.toString()
+      console.error(
+        `Payment not found for reference: ${transaction.reference}`
       );
 
       return res.status(200).json({
         received: true,
       });
     }
-
-    // ========================================================
-    // IDEMPOTENCY
-    // ========================================================
 
     if (payment.status === "success") {
       return res.status(200).json({
@@ -772,16 +661,11 @@ const handlePaystackWebhook = async (
       });
     }
 
-    // ========================================================
-    // CHECK INVOICE STATUS
-    // ========================================================
+    const invoice = payment.invoice;
 
-    if (
-      payment.invoice.status === "paid"
-    ) {
-      console.warn(
-        "Invoice already paid:",
-        payment.invoice._id.toString()
+    if (!invoice) {
+      console.error(
+        `Invoice not found for payment: ${payment.reference}`
       );
 
       return res.status(200).json({
@@ -789,142 +673,86 @@ const handlePaystackWebhook = async (
       });
     }
 
-    // ========================================================
-    // CHECK INTERNAL AMOUNT
-    // ========================================================
+    if (invoice.status === "paid") {
+      payment.status = "success";
+      payment.paidAt = payment.paidAt || new Date();
 
-    const expectedAmountInKobo =
-      getInvoiceAmountInKobo(
-        payment.invoice
+      await payment.save();
+
+      return res.status(200).json({
+        received: true,
+      });
+    }
+
+    const invoiceAmount = getInvoiceAmountInKobo(invoice);
+
+    if (payment.amount !== invoiceAmount) {
+      console.error(
+        `Amount mismatch for payment ${payment.reference}`
       );
 
+      return res.status(200).json({
+        received: true,
+      });
+    }
+
+    if (Number(transaction.amount) !== payment.amount) {
+      console.error(
+        `Paystack amount mismatch for payment ${payment.reference}`
+      );
+
+      return res.status(200).json({
+        received: true,
+      });
+    }
+
     if (
-      payment.amount !==
-      expectedAmountInKobo
+      transaction.currency &&
+      transaction.currency.toUpperCase() !== payment.currency
     ) {
       console.error(
-        "Webhook invoice/payment amount mismatch:",
-        {
-          reference:
-            payment.reference,
-
-          invoiceTotal:
-            payment.invoice.total,
-
-          expectedAmountInKobo,
-
-          paymentAmount:
-            payment.amount,
-        }
+        `Currency mismatch for payment ${payment.reference}`
       );
 
       return res.status(200).json({
         received: true,
       });
     }
-
-    // ========================================================
-    // CHECK PAYSTACK AMOUNT
-    // ========================================================
-
-    if (
-      Number(transaction.amount) !==
-      Number(payment.amount)
-    ) {
-      console.error(
-        "Webhook Paystack amount mismatch:",
-        {
-          reference:
-            payment.reference,
-
-          paystackAmount:
-            transaction.amount,
-
-          paymentAmount:
-            payment.amount,
-        }
-      );
-
-      return res.status(200).json({
-        received: true,
-      });
-    }
-
-    // ========================================================
-    // CHECK CURRENCY
-    // ========================================================
-
-    if (
-      transaction.currency !==
-      payment.currency
-    ) {
-      console.error(
-        "Webhook currency mismatch:",
-        {
-          reference:
-            payment.reference,
-
-          paystackCurrency:
-            transaction.currency,
-
-          paymentCurrency:
-            payment.currency,
-        }
-      );
-
-      return res.status(200).json({
-        received: true,
-      });
-    }
-
-    // ========================================================
-    // MARK PAYMENT SUCCESS
-    // ========================================================
 
     payment.status = "success";
-
-    payment.paidAt =
-      transaction.paid_at
-        ? new Date(
-            transaction.paid_at
-          )
-        : new Date();
+    payment.paidAt = new Date();
 
     await payment.save();
 
-    // Mark invoice paid.
-    await Invoice.findByIdAndUpdate(
-      payment.invoice._id,
-      {
-        status: "paid",
-      }
-    );
+    invoice.status = "paid";
+
+    await invoice.save();
 
     console.log(
-      "Payment confirmed by Paystack webhook:",
-      payment.reference
+      `Payment ${payment.reference} successfully verified via webhook`
     );
 
     return res.status(200).json({
       received: true,
     });
   } catch (error) {
-    console.error(
-      "Paystack webhook error:",
-      error
-    );
+    console.error("Paystack webhook error:", error);
 
-    // Paystack should receive a response.
     return res.status(200).json({
       received: true,
     });
   }
 };
 
+// ============================================================
+// EXPORTS
+// ============================================================
 
 module.exports = {
   initializePayment,
+  initializePublicPayment,
   verifyPayment,
+  verifyPublicPayment,
   getPayments,
   handlePaystackWebhook,
 };

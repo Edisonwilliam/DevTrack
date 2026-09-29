@@ -1,4 +1,8 @@
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import {
+  BrowserRouter,
+  Routes,
+  Route,
+} from "react-router-dom";
 
 import { AuthProvider } from "./context/AuthContext";
 
@@ -9,6 +13,7 @@ import Clients from "./pages/Clients";
 import Projects from "./pages/Projects";
 import Tasks from "./pages/Tasks";
 import Invoices from "./pages/Invoice";
+import PublicInvoice from "./pages/PublicInvoice";
 import Payments from "./pages/Payments";
 import PaymentCallback from "./pages/PaymentCallback";
 import Admin from "./pages/Admin";
@@ -21,7 +26,10 @@ function App() {
     <BrowserRouter>
       <AuthProvider>
         <Routes>
-          {/* Public Routes */}
+          {/* =========================
+              PUBLIC ROUTES
+          ========================= */}
+
           <Route path="/" element={<Login />} />
 
           <Route
@@ -34,7 +42,22 @@ function App() {
             element={<Register />}
           />
 
-          {/* Protected Dashboard Routes */}
+          {/* Public Client Invoice */}
+          <Route
+            path="/invoice/:token"
+            element={<PublicInvoice />}
+          />
+
+          {/* Paystack Callback */}
+          <Route
+            path="/payment/callback"
+            element={<PaymentCallback />}
+          />
+
+          {/* =========================
+              PROTECTED DASHBOARD ROUTES
+          ========================= */}
+
           <Route
             element={
               <ProtectedRoute>
@@ -82,12 +105,6 @@ function App() {
               }
             />
           </Route>
-
-          {/* Paystack Callback */}
-          <Route
-            path="/payment/callback"
-            element={<PaymentCallback />}
-          />
         </Routes>
       </AuthProvider>
     </BrowserRouter>

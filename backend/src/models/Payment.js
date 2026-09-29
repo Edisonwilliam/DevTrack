@@ -21,19 +21,27 @@ const paymentSchema = new mongoose.Schema(
       trim: true,
     },
 
-    // Payment amounts are stored in kobo.
-    // Example:
-    // ₦50,000 = 5,000,000 kobo
+   
     amount: {
       type: Number,
       required: true,
-      min: 0,
+      min: [1, "Payment amount must be greater than zero"],
+
+      validate: {
+        validator: Number.isInteger,
+        message: "Payment amount must be a whole number of kobo",
+      },
     },
 
     currency: {
       type: String,
-      enum: ["NGN"],
+      required: true,
+      enum: {
+        values: ["NGN"],
+        message: "Only NGN payments are supported",
+      },
       uppercase: true,
+      trim: true,
     },
 
     status: {
@@ -54,3 +62,4 @@ const paymentSchema = new mongoose.Schema(
 const Payment = mongoose.model("Payment", paymentSchema);
 
 module.exports = Payment;
+
