@@ -16,14 +16,58 @@ const { errorHandler } = require("./middleware/errorMiddleware");
 
 const app = express();
 
+// ============================================================
+// CORS
+// ============================================================
+
+const allowedOrigins = [
+  "http://localhost:5173",
+  "https://dev-track-olive-five.vercel.app",
+  process.env.FRONTEND_URL,
+].filter(Boolean);
+
 app.use(
   cors({
-    origin:
-      process.env.FRONTEND_URL || "http://localhost:5173",
+    origin: (origin, callback) => {
+      // Allow requests without an Origin header
+      // such as health checks and server-to-server requests.
+      if (!origin) {
+        return callback(null, true);
+      }
+
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      console.log(`CORS blocked origin: ${origin}`);
+
+      return callback(
+        new Error("Not allowed by CORS")
+      );
+    },
     credentials: true,
+    methods: [
+      "GET",
+      "POST",
+      "PUT",
+      "PATCH",
+      "DELETE",
+      "OPTIONS",
+    ],
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+      "X-Requested-With",
+    ],
   })
 );
 
+// Explicitly handle CORS preflight requests
+app.options("*", cors());
+
+// ============================================================
+// BODY PARSER
+// ============================================================
 
 app.use(
   express.json({
@@ -33,7 +77,9 @@ app.use(
   })
 );
 
-
+// ============================================================
+// HEALTH CHECK
+// ============================================================
 
 app.get("/api/health", (req, res) => {
   res.status(200).json({
@@ -42,7 +88,9 @@ app.get("/api/health", (req, res) => {
   });
 });
 
-
+// ============================================================
+// ROOT
+// ============================================================
 
 app.get("/", (req, res) => {
   res.json({
@@ -50,7 +98,9 @@ app.get("/", (req, res) => {
   });
 });
 
-
+// ============================================================
+// ROUTES
+// ============================================================
 
 app.use("/api/auth", authRoutes);
 app.use("/api/clients", clientRoutes);
@@ -61,7 +111,9 @@ app.use("/api/invoices", invoiceRoutes);
 app.use("/api/payments", paymentRoutes);
 app.use("/api/admin", adminRoutes);
 
-
+// ============================================================
+// PROTECTED TEST ROUTE
+// ============================================================
 
 app.get("/api/protected", protect, (req, res) => {
   res.json({
@@ -70,8 +122,10 @@ app.get("/api/protected", protect, (req, res) => {
   });
 });
 
+// ============================================================
+// ERROR HANDLER
+// ============================================================
 
 app.use(errorHandler);
 
 module.exports = app;
-
