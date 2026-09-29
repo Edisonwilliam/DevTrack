@@ -16,18 +16,13 @@ const { errorHandler } = require("./middleware/errorMiddleware");
 
 const app = express();
 
-const allowedOrigins = [ "http://localhost:5173",
-                         "http://127.0.0.1:5173",
-                         "https://dev-track-fshm7fh47-edisonwilliams-projects.vercel.app", ].filter(Boolean);
-
-
-
-app.use( cors({ origin: function (origin, callback) { 
-    if (!origin) { return callback(null, true); } 
-    if (allowedOrigins.includes(origin)) 
-    { return callback(null, true); } 
-    return callback(new Error("Not allowed by CORS")); }, 
-    credentials: true, }) );
+app.use(
+  cors({
+    origin:
+      process.env.FRONTEND_URL || "http://localhost:5173",
+    credentials: true,
+  })
+);
 
 
 app.use(
